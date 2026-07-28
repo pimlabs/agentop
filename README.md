@@ -31,30 +31,28 @@ Untuk tiap run workflow, Claude Code menulis direktori:
 
 ## Cara pasang
 
-Homebrew:
+Repo publik ini cuma berisi README, LICENSE, `install.sh`, dan Releases —
+source-nya ada di repo private terpisah, jadi `go install` tidak berlaku di
+sini. Pilih salah satu dari tiga jalur berikut (tersedia setelah rilis
+pertama dipublikasikan):
+
+Lewat Homebrew:
 
 ```
 brew install pimlabs/tap/agentop
 ```
 
-npm:
+Lewat npm:
 
 ```
 npm install -g @pimlabs/agentop
 ```
 
-Tanpa keduanya, langsung dari rilis:
+Lewat skrip pasang:
 
 ```
 curl -fsSL https://raw.githubusercontent.com/pimlabs/agentop/main/install.sh | sh
 ```
-
-Skrip itu mendeteksi OS dan arsitektur, memverifikasi checksum, lalu menaruh
-binernya di `/usr/local/bin` kalau bisa ditulis, atau `~/.local/bin` kalau tidak.
-Set `AGENTOP_VERSION=vX.Y.Z` untuk memasang versi tertentu.
-
-Nama paket npm memakai scope `@pimlabs` karena nama `agentop` tanpa scope sudah
-dipakai proyek lain yang tidak berhubungan.
 
 ## Cara pakai
 
@@ -109,12 +107,4 @@ Struktur paket:
 
 ## Rilis
 
-Rilis dipublikasikan lewat [GoReleaser](https://goreleaser.com) yang terpicu otomatis saat tag `v*` di-push, mem-build binary darwin+linux (amd64+arm64) dan menerbitkan formula ke tap `pimlabs/homebrew-tap`. Publish formula itu butuh secret `HOMEBREW_TAP_TOKEN` (personal access token dengan akses tulis ke repo tap) terisi di repo ini sebelum tag rilis pertama di-push.
-
-## Repo ini
-
-Repo ini berisi pemasang dan rilis. Source-nya privat, jadi `go install
-github.com/pimlabs/agentop/...` tidak akan bekerja — pakai salah satu cara
-pasang di atas.
-
-Rilis, checksum, dan binernya diterbitkan di sini lewat tab Releases.
+Rilis dipublikasikan lewat [GoReleaser](https://goreleaser.com) yang terpicu otomatis saat tag `v*` di-push, mem-build binary darwin+linux+windows (amd64+arm64), menerbitkan GitHub Release ke repo publik `pimlabs/agentop`, cask ke tap `pimlabs/homebrew-tap`, dan paket ke npm di bawah scope `@pimlabs`. Detail lengkap ada di [RELEASING.md](RELEASING.md).
