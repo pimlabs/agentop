@@ -85,26 +85,6 @@ Panel yang bisa difokuskan cuma dua: runs (daftar run) dan agents (daftar agent 
 
 agentop hanya membaca berkas, tidak pernah menulis ke direktori config Claude Code. Aman dijalankan berdampingan dengan workflow yang sedang berjalan; tidak ada risiko race condition terhadap Claude Code sendiri.
 
-## Pengembangan
-
-```
-go test ./...
-go vet ./...
-gofmt -l .
-```
-
-Struktur paket:
-
-- `internal/model` — tipe bersama (`Run`, `Agent`) dipakai semua paket lain.
-- `internal/discover` — menemukan direktori run di kedua akar config.
-- `internal/tail` — pembacaan berkas inkremental, tahan file berputar/hilang.
-- `internal/parse` — parsing journal + transcript, heuristik penebak label tugas, ringkasan panggilan tool.
-- `internal/watch` — menggabungkan discover + tail + parse jadi satu `*model.Run` yang selalu diperbarui.
-- `internal/ui` — TUI (Bubble Tea + Lipgloss + Bubbles).
-- `cmd/agentop` — entry point CLI.
-
-`prototype.py` di root repo adalah spesifikasi hidup: perilaku render, pembacaan inkremental, dan heuristik penebak label sudah teruji lewat run nyata sebelum di-port ke Go. `testdata/` berisi fixture journal + transcript asli (dipangkas) untuk pengujian tanpa perlu workflow sungguhan yang jalan.
-
 ## Rilis
 
 Rilis dipublikasikan lewat [GoReleaser](https://goreleaser.com) yang terpicu otomatis saat tag `v*` di-push, mem-build binary darwin+linux+windows (amd64+arm64), menerbitkan GitHub Release ke repo publik `pimlabs/agentop`, cask ke tap `pimlabs/homebrew-tap`, dan paket ke npm di bawah scope `@pimlabs`. Detail lengkap ada di [RELEASING.md](RELEASING.md).
