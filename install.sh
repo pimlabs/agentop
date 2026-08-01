@@ -1,19 +1,19 @@
 #!/bin/sh
-# Pemasang satu baris untuk agentop.
+# One-line installer for agentop.
 #
 #   curl -fsSL https://raw.githubusercontent.com/pimlabs/agentop/main/install.sh | sh
 #
-# POSIX sh (bukan bash) supaya jalan di /bin/sh minimal (dash di Debian/Ubuntu,
-# ash di Alpine, sh bawaan macOS), karena kita tidak tahu shell apa yang
-# tersedia di mesin pengguna sebelum instalasi.
+# POSIX sh rather than bash, so it runs under a minimal /bin/sh (dash on
+# Debian/Ubuntu, ash on Alpine, the stock sh on macOS). We cannot know which
+# shell a machine has before anything is installed.
 set -eu
 
 REPO="pimlabs/agentop"
 BINARY="agentop"
 
-# AGENTOP_VERSION kosong berarti "ambil rilis terbaru dari GitHub API".
-# Diset lewat env, bukan flag, karena skrip ini dijalankan lewat pipe ke sh
-# dan tidak punya argv yang mudah dijangkau pengguna curl | sh.
+# An empty AGENTOP_VERSION means "ask the GitHub API for the latest release".
+# Both knobs come from the environment rather than flags, because this script
+# is piped into sh and a curl | sh user has no easy way to pass argv.
 : "${AGENTOP_VERSION:=}"
 : "${AGENTOP_INSTALL_DIR:=}"
 
@@ -26,8 +26,8 @@ info() {
 	echo "install.sh: $*"
 }
 
-# Direktori sementara dibersihkan lewat trap supaya berkas unduhan tidak
-# menumpuk kalau skrip berhenti di tengah jalan (verifikasi gagal, dsb).
+# The temp directory is removed through a trap so downloads do not pile up
+# when the script stops halfway, for example on a failed checksum.
 tmpdir=""
 cleanup() {
 	if [ -n "$tmpdir" ] && [ -d "$tmpdir" ]; then
@@ -36,15 +36,15 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# --- deteksi platform -------------------------------------------------
-# Nama arsip goreleaser memakai istilah Go (darwin/linux, amd64/arm64), jadi
-# petakan keluaran uname ke istilah itu, bukan sebaliknya.
+# --- detect the platform ----------------------------------------------
+# goreleaser names its archives in Go's terms (darwin/linux, amd64/arm64), so
+# map uname output onto those names rather than the other way round.
 os_raw="$(uname -s)"
 case "$os_raw" in
 Darwin) os="darwin" ;;
 Linux) os="linux" ;;
 *)
-	err "sistem operasi '$os_raw' belum didukung skrip ini. agentop menyediakan biner darwin dan linux; untuk yang lain unduh manual dari https://github.com/$REPO/releases atau build dari sumber dengan 'go install github.com/$REPO/cmd/agentop@latest'."
+	err "this script does not support the operating system '$os_raw'. agentop ships darwin and linux binaries; for anything else download one by hand from https://github.com/$REPO/releases or build from source with 'go install github.com/$REPO/cmd/agentop@latest'."
 	;;
 esac
 
@@ -53,22 +53,22 @@ case "$arch_raw" in
 x86_64 | amd64) arch="amd64" ;;
 arm64 | aarch64) arch="arm64" ;;
 *)
-	err "arsitektur '$arch_raw' belum didukung skrip ini. agentop menyediakan biner amd64 dan arm64; unduh manual dari https://github.com/$REPO/releases kalau arsitekturmu berbeda."
+	err "this script does not support the architecture '$arch_raw'. agentop ships amd64 and arm64 binaries; download one by hand from https://github.com/$REPO/releases if yours differs."
 	;;
 esac
 
-# --- pilih unduh: curl lalu wget --------------------------------------
+# --- pick a downloader: curl first, then wget --------------------------
 downloader=""
 if command -v curl >/dev/null 2>&1; then
 	downloader="curl"
 elif command -v wget >/dev/null 2>&1; then
 	downloader="wget"
 else
-	err "butuh curl atau wget untuk mengunduh, tidak ada satu pun yang ditemukan di PATH."
+	err "downloading needs curl or wget, and neither was found on PATH."
 fi
 
 fetch() {
-	# $1 = url, cetak isi ke stdout
+	# $1 = url, contents go to stdout
 	url="$1"
 	if [ "$downloader" = "curl" ]; then
 		curl -fsSL "$url"
@@ -78,7 +78,7 @@ fetch() {
 }
 
 download_to() {
-	# $1 = url, $2 = path tujuan
+	# $1 = url, $2 = destination path
 	url="$1"
 	dest="$2"
 	if [ "$downloader" = "curl" ]; then
@@ -88,23 +88,23 @@ download_to() {
 	fi
 }
 
-# --- versi -------------------------------------------------------------
+# --- version -----------------------------------------------------------
 version="$AGENTOP_VERSION"
 if [ -z "$version" ]; then
-	info "mengambil versi rilis terbaru dari GitHub API..."
-	# API GitHub mengembalikan JSON; ambil "tag_name" tanpa dependensi jq
-	# karena skrip ini sengaja tanpa dependensi non-standar selain
-	# curl/wget dan sha256sum/shasum.
+	info "asking the GitHub API for the latest release..."
+	# The API answers with JSON, and "tag_name" is pulled out without jq
+	# because this script deliberately depends on nothing beyond curl/wget
+	# and sha256sum/shasum.
 	version="$(fetch "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | head -n1 | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
 	if [ -z "$version" ]; then
-		err "gagal membaca versi rilis terbaru dari GitHub API. Set AGENTOP_VERSION=vX.Y.Z secara eksplisit dan jalankan ulang."
+		err "could not read the latest release version from the GitHub API. Set AGENTOP_VERSION=vX.Y.Z explicitly and run this again."
 	fi
 fi
-# goreleaser name_template memakai {{ .Version }} tanpa awalan 'v', tapi tag
-# git dan URL rilis GitHub memakai 'v'. Simpan keduanya terpisah.
+# goreleaser's name_template uses {{ .Version }} with no leading 'v', while the
+# git tag and the GitHub release URL both carry one. Keep the two apart.
 version_notag="${version#v}"
 
-info "memasang agentop $version untuk $os/$arch..."
+info "installing agentop $version for $os/$arch..."
 
 archive_name="agentop_${version_notag}_${os}_${arch}.tar.gz"
 base_url="https://github.com/$REPO/releases/download/$version"
@@ -114,30 +114,31 @@ tmpdir="$(mktemp -d 2>/dev/null || mktemp -d -t agentop)"
 download_to "$base_url/$archive_name" "$tmpdir/$archive_name"
 download_to "$base_url/checksums.txt" "$tmpdir/checksums.txt"
 
-# --- verifikasi checksum -------------------------------------------------
-# goreleaser menghasilkan SATU checksums.txt gabungan untuk semua arsip
-# rilis, bukan satu .sha256 per arsip, jadi saring baris yang cocok dengan
-# nama arsip kita sebelum diverifikasi.
+# --- verify the checksum -------------------------------------------------
+# goreleaser produces ONE combined checksums.txt for every archive in the
+# release rather than a .sha256 per archive, so filter down to the line for
+# our archive before verifying.
 cd "$tmpdir"
 grep " $archive_name\$" checksums.txt >"checksums.filtered.txt" || true
 if [ ! -s "checksums.filtered.txt" ]; then
-	err "checksums.txt tidak berisi baris untuk $archive_name. Rilisnya mungkin tidak lengkap; laporkan di https://github.com/$REPO/issues."
+	err "checksums.txt has no line for $archive_name. The release may be incomplete; please report it at https://github.com/$REPO/issues."
 fi
 
 if command -v sha256sum >/dev/null 2>&1; then
-	sha256sum -c "checksums.filtered.txt" >/dev/null || err "verifikasi checksum gagal untuk $archive_name. Arsip unduhan mungkin rusak atau diganggu; jangan lanjutkan pemasangan."
+	sha256sum -c "checksums.filtered.txt" >/dev/null || err "checksum verification failed for $archive_name. The download may be corrupt or tampered with; the install stops here."
 elif command -v shasum >/dev/null 2>&1; then
-	shasum -a 256 -c "checksums.filtered.txt" >/dev/null || err "verifikasi checksum gagal untuk $archive_name. Arsip unduhan mungkin rusak atau diganggu; jangan lanjutkan pemasangan."
+	shasum -a 256 -c "checksums.filtered.txt" >/dev/null || err "checksum verification failed for $archive_name. The download may be corrupt or tampered with; the install stops here."
 else
-	err "butuh sha256sum atau shasum untuk memverifikasi unduhan, tidak ada satu pun yang ditemukan di PATH. Pemasangan dihentikan sengaja karena kami tidak memasang biner tanpa verifikasi checksum."
+	err "verifying the download needs sha256sum or shasum, and neither was found on PATH. The install stops deliberately, because we do not install a binary we have not verified."
 fi
 
 tar -xzf "$archive_name" "$BINARY"
 cd - >/dev/null
 
-# --- pilih direktori pasang ----------------------------------------------
-# Urutan: env eksplisit, lalu /usr/local/bin kalau bisa ditulis, lalu
-# ~/.local/bin sebagai fallback tanpa sudo (dengan peringatan PATH).
+# --- choose the install directory ----------------------------------------
+# In order: an explicit environment variable, then /usr/local/bin when it is
+# writable, then ~/.local/bin as a fallback that needs no sudo (with a PATH
+# warning).
 install_dir=""
 path_warning=0
 if [ -n "$AGENTOP_INSTALL_DIR" ]; then
@@ -154,17 +155,17 @@ install_path="$install_dir/$BINARY"
 cp "$tmpdir/$BINARY" "$install_path"
 chmod +x "$install_path"
 
-# --- buang karantina Gatekeeper di darwin --------------------------------
-# Biner yang diunduh lewat browser/curl dapat atribut xattr
-# com.apple.quarantine di macOS, yang membuat Gatekeeper memblokirnya saat
-# pertama dijalankan karena belum ditandatangani/notarized. xattr -d gagal
-# kalau atributnya memang tidak ada (mis. unduhan lewat curl polos tanpa
-# quarantine flag), jadi kegagalan itu bukan error dan sengaja diabaikan.
+# --- drop the Gatekeeper quarantine on darwin ----------------------------
+# A binary downloaded through a browser or curl picks up the
+# com.apple.quarantine xattr on macOS, and Gatekeeper then blocks it on first
+# run because it is neither signed nor notarized. xattr -d fails when the
+# attribute is not there at all (a plain curl download, for instance), so that
+# failure is expected and deliberately ignored.
 if [ "$os" = "darwin" ] && command -v xattr >/dev/null 2>&1; then
 	xattr -d com.apple.quarantine "$install_path" 2>/dev/null || true
 fi
 
-info "agentop $version terpasang di $install_path"
+info "agentop $version installed at $install_path"
 
 case ":$PATH:" in
 *":$install_dir:"*) ;;
@@ -174,9 +175,9 @@ case ":$PATH:" in
 esac
 
 if [ "$path_warning" -eq 1 ]; then
-	info "peringatan: $install_dir sepertinya belum ada di PATH kamu."
-	info "tambahkan baris berikut ke shell profile kamu (mis. ~/.zshrc atau ~/.bashrc):"
+	info "warning: $install_dir does not look like it is on your PATH."
+	info "add this line to your shell profile (~/.zshrc or ~/.bashrc, for example):"
 	info "  export PATH=\"$install_dir:\$PATH\""
 fi
 
-info "coba jalankan: $BINARY -v"
+info "try it: $BINARY -v"
