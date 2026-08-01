@@ -1,90 +1,89 @@
 # agentop
 
-TUI untuk memantau workflow multi-agent Claude Code secara live, dari terminal.
+A TUI for watching Claude Code multi-agent workflows live, from the terminal.
 
-![agentop memantau satu run workflow: delapan agen, dua gagal, dua macet](docs/demo.gif)
+![agentop watching one workflow run: eight agents, two failed, two stalled](docs/demo.gif)
 
-Rekaman itu `agentop --demo`, satu run bawaan yang tidak menyentuh disk sama sekali — jadi tidak ada nama proyek atau isi transcript siapa pun di dalamnya. Jalankan sendiri tanpa memasang apa-apa lebih dulu.
+That recording is `agentop --demo`, a built-in run that never touches the disk, so it contains nobody's project names or transcript contents. Try it yourself before installing anything.
 
-## Masalah
+## The problem
 
-Claude Code punya `/workflows` untuk memantau progres workflow multi-agent (banyak subagent jalan paralel, bisa puluhan menit), tapi slash command itu cuma tersedia di CLI/TUI resmi. Pengguna extension VSCode tidak punya cara melihat progres workflow yang sedang jalan sama sekali.
+Claude Code has `/workflows` for tracking multi-agent progress, where many subagents run in parallel and a run can take tens of minutes. That slash command only exists in the official CLI and TUI. Anyone using the VSCode extension has no way at all to see a running workflow's progress.
 
-`agentop` tidak menyambung ke Claude Code lewat API atau protokol apa pun, dan tidak menghubungi siapa pun. Ia cuma membaca berkas yang memang sudah ditulis Claude Code ke disk selama workflow jalan, lalu menyajikannya sebagai TUI yang bisa dipakai dari terminal mana pun, terlepas dari editor yang dipakai untuk memicu workflow-nya.
+`agentop` does not connect to Claude Code through an API or any protocol, and it never contacts anyone. It only reads the files Claude Code already writes to disk while a workflow runs, then presents them as a TUI you can use from any terminal, whatever editor started the workflow.
 
-Tidak ada kunci API, tidak ada akun, tidak ada layanan yang kami jalankan. Nanti akan ada `agentop serve` untuk konsumen yang tidak bisa menjangkau disk — misalnya ponsel lewat Tailscale — tapi bahkan itu cuma **mendengarkan** di alamat yang kamu tentukan, bawaannya loopback. Rinciannya di [ARCHITECTURE.md](ARCHITECTURE.md).
+No API key, no account, no service that we run. `agentop serve` is planned for consumers that cannot reach the disk, a phone over Tailscale for example, but even that only **listens** on an address you choose, defaulting to loopback.
 
-## Yang dibaca dari disk
+## What it reads from disk
 
-Untuk tiap run workflow, Claude Code menulis direktori:
+For every workflow run, Claude Code writes a directory:
 
 ```
-<akar-config>/projects/<project-slug>/<session-id>/subagents/workflows/wf_<runid>/
-  journal.jsonl              satu baris per event (agent mulai / agent selesai)
-  agent-<id>.jsonl           transcript penuh tiap subagent
-  agent-<id>.meta.json       tipe agent, kedalaman spawn, model
+<config-root>/projects/<project-slug>/<session-id>/subagents/workflows/wf_<runid>/
+  journal.jsonl              one line per event (agent started / agent finished)
+  agent-<id>.jsonl           the full transcript of each subagent
+  agent-<id>.meta.json       agent type, spawn depth, model
 ```
 
-`journal.jsonl` menentukan berapa agent yang sudah mulai dan berapa yang sudah melapor selesai; transcript tiap agent dibaca inkremental (hanya delta byte yang baru) karena berkasnya bisa tumbuh sampai beberapa megabyte selama workflow jalan.
+`journal.jsonl` decides how many agents have started and how many have reported back. Each agent transcript is read incrementally, taking only the new bytes, because a transcript can grow to several megabytes while a workflow runs.
 
-**Kedua akar config dipindai**: `~/.claude` (config personal) dan `~/.claude-work` (config kerja/organisasi). agentop menampilkan run dari keduanya tanpa perlu dipilih.
+**Both config roots are scanned**: `~/.claude` for personal config and `~/.claude-work` for work or organisation config. agentop shows runs from both without you choosing between them.
 
-## Cara pasang
+## Install
 
-Repo publik ini cuma berisi README, LICENSE, `install.sh`, dan Releases —
-source-nya ada di repo private terpisah, jadi `go install` tidak berlaku di
-sini. Pilih salah satu dari tiga jalur berikut (tersedia setelah rilis
-pertama dipublikasikan):
+This public repo holds only the README, LICENSE, `install.sh`, and Releases. The source lives in a separate private repo, so `go install` does not apply here. Pick one of three routes.
 
-Lewat Homebrew:
+Homebrew:
 
 ```
 brew install pimlabs/tap/agentop
 ```
 
-Lewat npm:
+npm:
 
 ```
 npm install -g @pimlabs/agentop
 ```
 
-Lewat skrip pasang:
+Install script:
 
 ```
 curl -fsSL https://raw.githubusercontent.com/pimlabs/agentop/main/install.sh | sh
 ```
 
-## Cara pakai
+## Usage
 
 ```
-agentop                 # workflow terbaru (dari kedua akar config)
-agentop wf_e63f8578      # run tertentu, prefix ID cukup
-agentop -i 2             # ganti interval refresh, default 1 detik
-agentop -v               # atau --version, cetak versi lalu keluar
+agentop                 # the most recent workflow, across both config roots
+agentop wf_e63f8578     # a specific run, an ID prefix is enough
+agentop -i 2            # change the refresh interval, default 1 second
+agentop -v              # or --version, print the version and exit
 ```
 
-Variabel lingkungan `AGENTOP_HOME` menimpa akar config yang dipindai (default: home directory pengguna, tempat `.claude` dan `.claude-work` dicari). Berguna untuk mengarahkan agentop ke direktori hasil capture tanpa workflow live yang jalan; ini juga cara test menjalankan agentop terhadap fixture.
+The `AGENTOP_HOME` environment variable overrides the config root being scanned. It defaults to the user's home directory, where `.claude` and `.claude-work` are looked for. This is useful for pointing agentop at a captured directory with no live workflow running.
 
-### Peta tombol
+### Key map
 
-Panel yang bisa difokuskan cuma dua: runs (daftar run) dan agents (daftar agent dalam run terpilih). Transcript agent bukan panel, melainkan layar tersendiri yang dibuka lewat Enter.
+Only two panels take focus: runs, and the agents inside the selected run. An agent transcript is not a panel but a screen of its own, opened with Enter.
 
-| Tombol | Aksi |
+| Key | Action |
 |---|---|
-| `Tab` / `→` / `l` | pindah fokus ke panel lain (runs ⇄ agents) |
-| `Shift+Tab` / `←` / `h` | pindah fokus ke panel lain, arah sebaliknya |
-| `↑`/`↓` atau `j`/`k` | gerak dalam panel yang sedang fokus |
-| `Enter` | di panel runs: pindah fokus ke panel agents. Di panel agents: buka transcript agent yang dipilih |
-| `Esc` | di layar transcript atau layar bantuan: kembali ke daftar. Di layar daftar: tidak berbuat apa-apa |
-| `f` | tampilkan cuma agent yang gagal/masih berjalan |
-| `r` | refresh sekarang, tanpa menunggu interval |
-| `?` | buka bantuan; dari layar bantuan, `?`/`Enter`/`Esc` sama-sama menutupnya |
-| `q` / `Ctrl+C` | keluar |
+| `Tab` / `→` / `l` | move focus to the other panel (runs ⇄ agents) |
+| `Shift+Tab` / `←` / `h` | move focus to the other panel, the other way |
+| `↑`/`↓` or `j`/`k` | move within the focused panel |
+| `Enter` | in runs: move focus to agents. In agents: open the selected agent's transcript |
+| `Esc` | on the transcript or help screen: go back to the list. On a list screen: nothing |
+| `f` | show only agents that failed or are still running |
+| `r` | refresh now, without waiting for the interval |
+| `?` | open help; from help, `?`/`Enter`/`Esc` all close it |
+| `q` / `Ctrl+C` | quit |
 
-## Catatan keamanan
+## Safety
 
-agentop hanya membaca berkas, tidak pernah menulis ke direktori config Claude Code. Aman dijalankan berdampingan dengan workflow yang sedang berjalan; tidak ada risiko race condition terhadap Claude Code sendiri.
+agentop only reads. It never writes to a Claude Code config directory. Running it alongside a live workflow is safe, and there is no race against Claude Code itself.
 
-## Rilis
+Besides files, agentop runs two of the system's own read-only commands: `ps` to list processes, and `lsof` to read the working directory of a live Claude Code process. Both feed a single column: whether an unfinished run still has someone working on it, or its parent session is gone. agentop never signals, stops, or alters any process, and on a machine without `ps` or `lsof` that column reads `unknown` while everything else keeps working.
 
-Rilis dipublikasikan lewat [GoReleaser](https://goreleaser.com) yang terpicu otomatis saat tag `v*` di-push, mem-build binary darwin+linux+windows (amd64+arm64), menerbitkan GitHub Release ke repo publik `pimlabs/agentop`, cask ke tap `pimlabs/homebrew-tap`, dan paket ke npm di bawah scope `@pimlabs`. Detail lengkap ada di [RELEASING.md](RELEASING.md).
+## Releases
+
+Releases are published by [GoReleaser](https://goreleaser.com), triggered when a `v*` tag is pushed. It builds binaries for darwin, linux, and windows on amd64 and arm64, publishes a GitHub Release here, a cask to the `pimlabs/homebrew-tap` tap, and packages to npm under the `@pimlabs` scope.
