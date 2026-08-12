@@ -12,7 +12,7 @@ Claude Code has `/workflows` for tracking multi-agent progress, where many subag
 
 `agentop` does not connect to Claude Code through an API or any protocol, and it never contacts anyone. It only reads the files Claude Code already writes to disk while a workflow runs, then presents them as a TUI you can use from any terminal, whatever editor started the workflow.
 
-No API key, no account, no service that we run. `agentop serve` is planned for consumers that cannot reach the disk, a phone over Tailscale for example, but even that only **listens** on an address you choose, defaulting to loopback.
+No API key, no account, no service that we run. `agentop serve` exists for consumers that cannot reach the disk, a phone over Tailscale for example, but even that only **listens** on an address you choose, defaulting to loopback.
 
 ## What it reads from disk
 
@@ -77,6 +77,46 @@ Only two panels take focus: runs, and the agents inside the selected run. An age
 | `r` | refresh now, without waiting for the interval |
 | `?` | open help; from help, `?`/`Enter`/`Esc` all close it |
 | `q` / `Ctrl+C` | quit |
+
+## Watching a machine you are not sitting at
+
+Claude Code often runs somewhere else: a server, a VM, a machine in another room. `agentop serve` answers the same documents the terminal shows, over HTTP and Server-Sent Events, so that machine can be watched from a browser or a script on this one.
+
+```
+agentop serve                          # loopback only, http://127.0.0.1:8477
+agentop serve --listen 0.0.0.0:8477    # every interface, reachable from the network
+agentop serve --interval 2s            # how often /events re-reads the disk
+```
+
+Three routes are answered, all `GET` and nothing else:
+
+| Route | Answers |
+|---|---|
+| `/runs` | the run list, the same document `agentop runs --json` prints |
+| `/runs/{id}` | one run, `?agent=<id>` narrows it to a single agent |
+| `/events` | a live stream, `?run=<id>` follows one run instead of the list |
+
+**Two safety rules decide who is answered, and it is worth knowing them before you wonder about a 403.**
+
+The first is the `Host` header. A request is answered when it names loopback, the address the server is bound to, or the address of the interface the request actually arrived on. That last rule is what makes `--listen 0.0.0.0:8477` work from any of the machine's own addresses. A request naming a *domain* is refused unless you name it, because a name is what DNS rebinding needs to make a web page in your browser read this server on your behalf:
+
+```
+agentop serve --listen 0.0.0.0:8477 \
+  --allow-host agentop.example.com \
+  --allow-host 203.0.113.5:8477
+```
+
+Repeat the flag, or separate entries with commas. The second form is what a cloud VM needs: its public address usually belongs to a router rather than to any interface the VM can see, so the machine cannot work it out for itself.
+
+The second rule is `--full`. Prompts, results and timelines carry source code and sometimes secrets, so `--full` is **refused on any address that is not loopback** and there is no flag to override it. Over a network you get the run list and the agent states, never the transcripts.
+
+**There is no authentication.** Anything that can reach the port can read that machine's run list, so put it behind something that does the authenticating: a Tailscale or WireGuard network, or an SSH tunnel.
+
+```
+ssh -L 8477:127.0.0.1:8477 you@server     # on your laptop, with agentop serve running on the server
+```
+
+The tunnel is worth preferring even when the network is private. From the server's point of view the request arrives on loopback, so nothing needs allowing, and it is the only way `--full` is available at all from somewhere else.
 
 ## Safety
 
