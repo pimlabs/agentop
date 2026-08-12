@@ -137,8 +137,15 @@ cd - >/dev/null
 
 # --- choose the install directory ----------------------------------------
 # In order: an explicit environment variable, then /usr/local/bin when it is
-# writable, then ~/.local/bin as a fallback that needs no sudo (with a PATH
-# warning).
+# writable, then ~/.local/bin as a fallback that needs no sudo.
+#
+# Whether to warn about PATH is decided further down by looking at PATH, and
+# only there. It used to be decided here too, on the theory that the fallback
+# directory is the one people have not set up, and that theory is wrong on the
+# machine it fires on most: /usr/local/bin is not writable on a stock macOS,
+# so every macOS user takes this branch, including the ones who put
+# ~/.local/bin on their PATH years ago. They were told to add a line their
+# profile already had.
 install_dir=""
 path_warning=0
 if [ -n "$AGENTOP_INSTALL_DIR" ]; then
@@ -147,7 +154,6 @@ elif [ -w "/usr/local/bin" ]; then
 	install_dir="/usr/local/bin"
 else
 	install_dir="$HOME/.local/bin"
-	path_warning=1
 fi
 
 mkdir -p "$install_dir"
