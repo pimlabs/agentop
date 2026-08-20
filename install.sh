@@ -36,10 +36,36 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# --- hand Windows over to the PowerShell installer ---------------------
+# Git Bash, MSYS and Cygwin all run this script happily and then need a .exe
+# that no darwin or linux archive contains. WSL is deliberately not caught
+# here: it reports Linux, has no OS=Windows_NT, and genuinely wants the Linux
+# binary, which is why the test is not "does this look like Windows".
+os_raw="$(uname -s)"
+case "$os_raw" in
+MINGW* | MSYS* | CYGWIN*)
+	is_windows=1
+	;;
+*)
+	if [ "${OS:-}" = "Windows_NT" ]; then
+		is_windows=1
+	else
+		is_windows=0
+	fi
+	;;
+esac
+
+if [ "$is_windows" -eq 1 ]; then
+	if command -v powershell.exe >/dev/null 2>&1; then
+		info "this is Windows, so handing over to the PowerShell installer..."
+		exec powershell.exe -NoProfile -Command "irm https://agentop.pimlabs.id/install.ps1 | iex"
+	fi
+	err "this looks like Windows, where agentop installs through PowerShell rather than sh. Run this instead:  irm https://agentop.pimlabs.id/install.ps1 | iex"
+fi
+
 # --- detect the platform ----------------------------------------------
 # goreleaser names its archives in Go's terms (darwin/linux, amd64/arm64), so
 # map uname output onto those names rather than the other way round.
-os_raw="$(uname -s)"
 case "$os_raw" in
 Darwin) os="darwin" ;;
 Linux) os="linux" ;;
@@ -92,12 +118,24 @@ download_to() {
 version="$AGENTOP_VERSION"
 if [ -z "$version" ]; then
 	info "asking the GitHub API for the latest release..."
-	# The API answers with JSON, and "tag_name" is pulled out without jq
-	# because this script deliberately depends on nothing beyond curl/wget
-	# and sha256sum/shasum.
-	version="$(fetch "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | head -n1 | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
+	# Deliberately NOT /releases/latest. That endpoint answers with the newest
+	# release of ANY kind, and this repo publishes two tag series into one
+	# releases page: v* for the binary and vscode-v* for the editor extension.
+	# On 20 August 2026 vscode-v0.6.0 was published after v0.11.0, so every
+	# run of this script asked for agentop_scode-v0.6.0_<os>_<arch>.tar.gz and
+	# died on a 404. Found by running the published script, which is the only
+	# way this class of bug has ever been found here.
+	#
+	# /releases lists newest first, so take the first tag that names the
+	# binary. "tag_name" is pulled out without jq because this script
+	# deliberately depends on nothing beyond curl/wget and sha256sum/shasum.
+	version="$(fetch "https://api.github.com/repos/$REPO/releases?per_page=30" |
+		grep '"tag_name"' |
+		sed -E 's/.*"tag_name": *"([^"]+)".*/\1/' |
+		grep -E '^v[0-9]' |
+		head -n1)"
 	if [ -z "$version" ]; then
-		err "could not read the latest release version from the GitHub API. Set AGENTOP_VERSION=vX.Y.Z explicitly and run this again."
+		err "could not find a released agentop version through the GitHub API. Set AGENTOP_VERSION=vX.Y.Z explicitly and run this again."
 	fi
 fi
 # goreleaser's name_template uses {{ .Version }} with no leading 'v', while the
