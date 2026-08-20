@@ -186,13 +186,19 @@ agentop help            # or -h, the full usage text
 Every command takes `-h` for its own flags, and every one of them writes to
 stdout, so `agentop serve -h | less` shows something. Errors keep stderr.
 
-Two panels take focus: the runs, and the agents inside the selected run. An
-agent's transcript is not a panel but a screen of its own, opened with `Enter`.
+Three levels, and the arrow keys walk all of them. `→` goes one level in, `←`
+one level out: runs, then the agents of the selected run, then that agent's
+transcript. `Enter` and `Esc` do the same thing, so nothing you already know
+stops working, but you never need them.
 
-The layout follows the terminal width. At 142 columns and above the detail
-earns a third column of its own; between 60 and 142 you get the two panels;
-below 60 only the focused panel is drawn. That last case is why the key that
-moves focus back is always visible in the footer.
+Runs are grouped by the session they came out of, since several runs commonly
+come from one conversation. A session heading is not selectable; the cursor
+moves between runs.
+
+The layout follows the terminal width. At 144 columns and above the detail
+earns a third column of its own; between 99 and 144 you get two columns with
+the detail as a strip beneath them; below 99 only the level you are on is
+drawn, and `←` is how you get back to the one above it.
 
 ### Key map
 
@@ -200,13 +206,13 @@ On the list screen:
 
 | Key | Action |
 |---|---|
-| `↑` / `k`, `↓` / `j` | move within the focused panel |
-| `Tab` / `→` / `l` | next panel |
-| `Shift+Tab` / `←` / `h` | previous panel |
-| `Enter` | in runs: move focus to agents. In agents: open the transcript, or fold a group header |
+| `↑` / `k`, `↓` / `j` | move within the level you are on |
+| `→` / `l` / `Enter` | one level in: runs to agents, agents to the transcript |
+| `←` / `h` / `Esc` | one level out |
+| `Tab`, `Shift+Tab` | next or previous panel, without changing level |
 | `f` | attention only: hide every agent that does not need you |
 | `n` | jump to the next agent that needs attention |
-| `s` | cycle how runs are sorted; the current mode is shown in the panel title |
+| `s` | cycle how runs are sorted; the current mode is shown in the runs column heading |
 | `S` | reverse the current sort |
 | `+` / `=` | poll less often |
 | `-` / `_` | poll more often |
@@ -219,16 +225,17 @@ On the transcript screen:
 | Key | Action |
 |---|---|
 | `↑` / `↓`, page keys | scroll |
-| `Tab` / `→` / `l`, `Shift+Tab` / `←` / `h` | next or previous tool group |
-| `Enter` | fold or unfold the current group |
-| `Esc` | back to the list |
+| `Tab`, `Shift+Tab` | next or previous tool group |
+| `→` / `l` / `Enter` | fold or unfold the group under the cursor |
+| `←` / `h` / `Esc` | back to the list |
 | `?` | open help |
 
 On the help screen, `?`, `Enter` and `Esc` all close it. `q` and `Ctrl+C` quit
 from anywhere.
 
-The poll interval you set with `+` and `-` applies immediately and is shown in
-the header. It is not remembered between sessions.
+The poll interval you set with `+` and `-` applies immediately and is shown on
+the rule at the bottom of the screen, beside the clock. It is not remembered
+between sessions.
 
 ## What the words mean
 
@@ -453,7 +460,7 @@ It is not on the Marketplace or Open VSX yet. Download
 [Releases page](https://github.com/pimlabs/agentop/releases) and install it:
 
 ```
-code --install-extension agentop-0.3.0.vsix
+code --install-extension agentop-<version>.vsix
 ```
 
 It needs the `agentop` binary on `PATH`, or the `agentop.binaryPath` setting
