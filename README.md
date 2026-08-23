@@ -349,28 +349,72 @@ format later cannot silently change what an existing script receives.
 ```
 agentop runs --json [filter]                 list every run once and exit
 agentop show <runid> --json [--brief] [--agent <id>]
-agentop watch [runid] --ndjson [--interval 1s]
+agentop watch [runid] --ndjson [--interval 1s] [--brief]
 ```
+
+Every command above also takes `--project <dir>`, and so does the bare command.
+See [Scoping to one project](#scoping-to-one-project).
 
 | Flag | Applies to | Effect |
 |---|---|---|
 | `--json` | `runs`, `show` | required; emit JSON |
 | `--ndjson` | `watch` | required; emit newline-delimited JSON |
-| `--brief` | `show` | omit `prompt`, `result`, `timeline` and `lastText` |
+| `--brief` | `show`, `watch` | omit `prompt`, `result`, `timeline` and `lastText` |
 | `--agent <id>` | `show` | narrow the answer to one agent |
 | `--interval <d>` | `watch` | how often the disk is re-read, default `1s` |
+| `--project <dir>` | every command | report only the runs belonging to one folder |
 
 `watch` with no run id follows the run list; with one it follows that run.
 Every line is one message, and each carries `v`, `type` and `at`:
 
 | `type` | Sent when |
 |---|---|
-| `hello` | first, naming the agentop version and schema version |
+| `hello` | first, naming the agentop version, schema version and capabilities |
 | `snapshot` | the full current state |
 | `delta` | only what changed since the last message |
 | `tick` | the interval elapsed and nothing changed |
 | `gone` | the run being followed disappeared from disk |
 | `error` | the disk could not be read |
+
+### Asking a running stream for a run's agents
+
+`agentop watch --ndjson` with no run id reads commands on its stdin, one
+compact JSON value per line, and reports those runs' agents on the stream it
+is already writing. That saves a second `agentop show` process: the stream
+polls every run in full on each interval anyway, so the answer is already in
+memory.
+
+```
+{"cmd":"select","runIds":["wf_abc","wf_def"]}
+```
+
+The list is the whole selection rather than an addition to it, so sending
+`{"cmd":"select","runIds":[]}` stops the detail again. Those runs then arrive
+as `snapshot` and `delta` messages with `"target":"run"`, alongside the
+`"target":"list"` messages the stream was already sending. A run that is not on
+disk, or stops being, gets one `gone` rather than a detail.
+
+**At most 32 runs at a time.** A longer list is refused outright with an
+`error` message naming the limit, and the previous selection stands: reporting
+32 of the 40 you asked for would look exactly like eight runs that stopped
+changing. A line longer than 64 KB is discarded the same way, with the stream
+carrying on.
+
+Check `capabilities` on the first line before sending anything:
+
+```json
+{"v":2,"type":"hello","binaryVersion":"0.12.0","schemaVersion":2,
+ "roots":[".claude",".claude-work"],"capabilities":["select"]}
+```
+
+An empty list means this stream does not take commands, which is the case
+when stdin is a terminal, so an interactive `agentop watch --ndjson` never
+reads your keyboard. The key missing altogether means an agentop older than
+the channel.
+
+Nothing here writes: `select` changes which runs agentop describes and cannot
+run, stop or alter an agent. `agentop serve` offers no such channel at all,
+because its stream goes one way by construction.
 
 Every document starts with the same envelope:
 
@@ -467,6 +511,32 @@ journal of their own. They are gathered into a pseudo-run per session so they
 appear too, rather than leaving the screen empty. Anything derived from the
 journal, which means the started-versus-finished accounting and every attention
 rule, is switched off for those.
+
+### Scoping to one project
+
+By default agentop reports every project on the machine, which is the point of
+it: one screen answers what is happening everywhere, including the repository
+you do not have open. `--project` narrows that to one folder.
+
+```
+agentop --project .                          this project, in the terminal UI
+agentop runs --json --project ~/src/myrepo   this project, as JSON
+agentop serve --project .                    this project, over HTTP
+```
+
+A run belongs to a folder when the session that made it ran in that folder or
+anywhere below it. Two consequences are worth knowing before you rely on it:
+
+- **A worktree counts as part of its repository.** Agents often run in
+  `<repo>/.claude/worktrees/<branch>`, and those runs answer to the repository.
+  Scoping to a worktree answers about the whole repository too, because that is
+  what you are working on.
+- **Scoping to a subdirectory answers about that subtree only.** `--project
+  ~/src/myrepo/web` does not include a session started at the top of
+  `myrepo`, because that session did not run inside the folder you named.
+
+A folder that does not exist is not an error. It simply matches no run, the
+same as a project that has never had one.
 
 ### Environment variables
 
