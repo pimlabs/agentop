@@ -129,9 +129,11 @@ One binary, three screens, all reading the same files and using the same words.
 | **[Browser dashboard](#watching-a-machine-you-are-not-sitting-at)** | `agentop serve`, then open the printed address | another machine, or a phone |
 | **[VS Code](#inside-vs-code)** | install the extension | staying in the editor |
 
-There is a fourth, for programs rather than people: `runs`, `show` and `watch`
-emit JSON, described under [Reading it from a
-script](#reading-it-from-a-script).
+There is a fourth, for programs rather than people. `runs`, `show` and `watch`
+emit JSON; `check` answers with an exit code a pipeline can fail on; `pack`
+writes one finished run to a file you can send to somebody else, `play` opens
+one of those in this same terminal UI, and `diff` compares two. All of it is
+under [Reading it from a script](#reading-it-from-a-script).
 
 ## The terminal UI
 
@@ -143,6 +145,7 @@ agentop -i 2            # refresh every 2 seconds instead of every 1
 agentop --demo          # the built-in sample run, no file is ever read
 agentop -v              # or --version, print the version and exit
 agentop help            # or -h, the full usage text
+agentop completion zsh  # a completion script; also bash, fish, powershell, elvish
 ```
 
 Every command takes `-h` for its own flags, and every one of them writes to
@@ -317,9 +320,13 @@ with runs grouped under the session they came from, each agent's transcript as
 a read-only editor document, a notification when a run stops moving with agents
 still running, and a terminal profile that starts the TUI in a tab.
 
-It is not on the Marketplace or Open VSX yet. Download
-`agentop-<version>.vsix` from the
-[Releases page](https://github.com/pimlabs/agentop/releases) and install it:
+![The Runs panel in VS Code updating as a workflow runs, with an agent transcript open as an editor tab](docs/vscode/panel.gif)
+
+Install it from the
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pimlabs.agentop),
+or search "agentop" in the Extensions view. It is not on Open VSX yet, so for
+VSCodium, Cursor or Windsurf, download `agentop-<version>.vsix` from the
+[Releases page](https://github.com/pimlabs/agentop/releases) instead:
 
 ```
 code --install-extension agentop-<version>.vsix
@@ -352,8 +359,8 @@ agentop show <runid> --json [--brief] [--agent <id>]
 agentop watch [runid] --ndjson [--interval 1s] [--brief]
 ```
 
-Every command above also takes `--project <dir>`, and so does the bare command.
-See [Scoping to one project](#scoping-to-one-project).
+Every command above also takes `--project <dir>`, and so do the bare command,
+`check` and `pack`. See [Scoping to one project](#scoping-to-one-project).
 
 | Flag | Applies to | Effect |
 |---|---|---|
@@ -362,7 +369,7 @@ See [Scoping to one project](#scoping-to-one-project).
 | `--brief` | `show`, `watch` | omit `prompt`, `result`, `timeline` and `lastText` |
 | `--agent <id>` | `show` | narrow the answer to one agent |
 | `--interval <d>` | `watch` | how often the disk is re-read, default `1s` |
-| `--project <dir>` | every command | report only the runs belonging to one folder |
+| `--project <dir>` | every command that discovers runs | report only the runs belonging to one folder. Not `play` or `diff`, which read `.aop` files and never look for a run |
 
 `watch` with no run id follows the run list; with one it follows that run.
 Every line is one message, and each carries `v`, `type` and `at`:
@@ -375,6 +382,101 @@ Every line is one message, and each carries `v`, `type` and `at`:
 | `tick` | the interval elapsed and nothing changed |
 | `gone` | the run being followed disappeared from disk |
 | `error` | the disk could not be read |
+
+### Failing a pipeline on a run that went wrong
+
+`agentop check` is the one subcommand whose answer is its exit code. It asserts
+rather than reports, so a CI step can fail on a run instead of printing one for
+somebody to read later.
+
+```
+agentop check --fail-on dead,stalled --project .
+agentop check --max-tokens 500000 wf_abc
+```
+
+| Flag | Effect |
+|---|---|
+| `--fail-on <list>` | comma-separated: `dead`, `stalled`, `overspend`, `orphan` |
+| `--max-tokens <n>` | fail when a run's summed output tokens exceed `n` |
+
+At least one of the two is required. An invocation that asserts nothing would
+pass unconditionally, and a green step that checked nothing reads as evidence.
+
+| Exit | Meaning |
+|---|---|
+| `0` | every assertion holds |
+| `1` | at least one does not |
+| `2` | the question could not be asked: a bad flag, an unreadable home, no assertion |
+
+The 1-versus-2 split is why this is usable in a pipeline: a dead agent and a
+broken agentop are different failures, and a gate that cannot tell them apart
+stops being trusted. The report goes to stderr, one line per rule per run, and
+stdout stays empty. There is no `--json`; `show --json` already carries every
+field behind a failure.
+
+The reasons are the same ones the run list and `--json` report, so a gate and a
+screen cannot disagree about one run. They inherit that layer's gates too: a
+reason needs a journal and goes quiet once a run has, which is what stops a
+finished workflow from failing a build days later. `--max-tokens` has no such
+gate, because a finished run's cost is still real.
+
+### Packing a run, and comparing two of them
+
+`agentop pack` writes one finished run to a single `.aop` file, produced once
+and never updated. It is a zip of JSON, so it opens with tools already on the
+machine.
+
+```
+agentop pack wf_abc --out before.aop
+unzip -l before.aop                      # a manifest and one entry per agent
+unzip -p before.aop pack.json | jq .run  # the run, without its agents
+```
+
+Packing the same run twice gives byte-identical files, so an `.aop` can be
+verified by re-packing rather than trusted. A run that is still moving is
+refused: a workflow run needs its journal to balance, and a Task pseudo-run,
+which has no journal, needs to have gone quiet.
+
+Everything in the file is frozen at the run's own last activity rather than at
+the moment you packed it. That is what keeps a failed agent flagged: attention
+reasons are cleared once a run goes quiet, so a pack taken against the wall
+clock would record a dead agent that nothing marks.
+
+`agentop play` opens one in the same terminal UI a live run uses, with the same
+keys. There is no second renderer: it swaps where the run comes from and
+nothing else.
+
+```
+agentop play before.aop
+```
+
+The clock is frozen at the run's own last activity, so idle times and states
+are the ones it had when it stopped rather than however long ago that was. The
+footer says `frozen at` and the date instead of a running clock, because a bare
+time of day on a month-old artefact reads as now.
+
+`agentop diff` compares two of them.
+
+```
+$ agentop diff before.aop after.aop
+                              before.aop        after.aop           delta
+  run                    wf_cd8e8e42-07f  wf_d9c29f42-e7f
+  agents                              10               14              +4
+  needing attention                    2                2            same
+  duration                       46m 49s          20m 55s        -25m 53s
+  output tokens                  224,520          143,171  -81,349 (-36%)
+  context tokens              44,234,174       26,482,861     -17,751,313
+
+  phase 1                              5                2              -3
+  phase 2                              1                6              +5
+```
+
+Agents, attention, duration and both token totals come from each file's
+manifest, so those rows decompress nothing. Dead agents and the phase table do
+read every agent entry, because neither number is in the manifest.
+
+There is no `--json` on either command: the numbers are already a document, and
+`unzip -p run.aop pack.json` is it.
 
 ### Asking a running stream for a run's agents
 
@@ -606,9 +708,13 @@ not a secure context. See [On a phone](#on-a-phone).
 
 ## Safety
 
-agentop only reads. It never writes to a Claude Code config directory. Running
-it alongside a live workflow is safe, and there is no race against Claude Code
-itself.
+agentop never writes to a Claude Code config directory, and never runs, stops
+or alters an agent. Running it alongside a live workflow is safe, and there is
+no race against Claude Code itself.
+
+It writes exactly one thing: `agentop pack` produces a `.aop` file at the path
+you give it. agentop never picks a location to write to, so nothing appears on
+your disk that you did not name.
 
 Besides files, agentop runs two of the system's own read-only commands: `ps` to
 list processes, and `lsof` to read the working directory of a live Claude Code
