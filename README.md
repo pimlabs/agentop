@@ -645,9 +645,17 @@ same as a project that has never had one.
 | Variable | Read by | Effect |
 |---|---|---|
 | `AGENTOP_HOME` | every command | the directory searched for `.claude` and `.claude-work`. Defaults to your home directory. This is how you point agentop at a captured directory with no live workflow running |
+| `GOMEMLIMIT` | every command | the soft heap ceiling. agentop sets 64MiB on itself when this is unset, which is what keeps a long-lived `watch` or `serve` from sitting on a much larger footprint while it idles. Set a larger value if you have far more runs than fit in it, or `off` to remove the ceiling and get Go's default behaviour back |
 
 `AGENTOP_HOME` names the directory that *contains* the config roots, not a
 config root itself. Both `.claude` and `.claude-work` are looked for inside it.
+
+`GOMEMLIMIT` is Go's own variable rather than one agentop invented, so anything
+it accepts works here. agentop only fills it in when you have not, and the check
+is whether the variable is set at all: `GOMEMLIMIT=off` is respected and leaves
+the process with no ceiling. Measured on a 164-run corpus, a long-lived `watch`
+holds a 61 MB physical footprint with the ceiling and 82 MB without it, for no
+measurable difference in CPU.
 
 The installers read three more, `AGENTOP_VERSION`, `AGENTOP_INSTALL_DIR` and
 `AGENTOP_NO_PATH`, which are described under [Install](#install) next to the
