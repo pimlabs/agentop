@@ -168,11 +168,31 @@ if (-not $version) {
             }
         }
     } catch {
-        Stop-WithError "could not read the release list from the GitHub API: $($_.Exception.Message). Set `$env:AGENTOP_VERSION = 'vX.Y.Z' and run this again."
+        Write-Info "the GitHub API did not answer: $($_.Exception.Message)"
+    }
+    if (-not $version) {
+        # Same fallback as install.sh, for the same reason (decisions 3.47): the
+        # API allows 60 anonymous requests an hour per IP. Only an entry's own
+        # alternate link is matched, and only a v* tag.
+        Write-Info "reading the releases feed instead..."
+        try {
+            $feed = Invoke-WebRequest -Uri "https://github.com/$Repo/releases.atom" `
+                -Headers @{ "User-Agent" = "agentop-install" } -UseBasicParsing
+            $body = $feed.Content
+            # Whether 5.1 hands back application/atom+xml as text or bytes is
+            # not established, so accept both.
+            if ($body -is [byte[]]) { $body = [System.Text.Encoding]::UTF8.GetString($body) }
+            $pattern = '<link rel="alternate" type="text/html" href="https://github\.com/' +
+                [regex]::Escape($Repo) + '/releases/tag/(v[0-9][^"]*)"'
+            $match = [regex]::Match($body, $pattern)
+            if ($match.Success) { $version = $match.Groups[1].Value }
+        } catch {
+            Write-Info "the releases feed did not answer either: $($_.Exception.Message)"
+        }
     }
 }
 if (-not $version) {
-    Stop-WithError "could not find a released agentop version through the GitHub API. Set `$env:AGENTOP_VERSION = 'vX.Y.Z' and run this again."
+    Stop-WithError "could not find a released agentop version through the GitHub API or the releases feed. Set `$env:AGENTOP_VERSION = 'vX.Y.Z' and run this again."
 }
 
 # goreleaser's name_template uses the version with no leading 'v', while the

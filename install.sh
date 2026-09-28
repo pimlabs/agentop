@@ -135,7 +135,20 @@ if [ -z "$version" ]; then
 		grep -E '^v[0-9]' |
 		head -n1)"
 	if [ -z "$version" ]; then
-		err "could not find a released agentop version through the GitHub API. Set AGENTOP_VERSION=vX.Y.Z explicitly and run this again."
+		# The API allows 60 anonymous requests an hour per IP, shared with every
+		# other caller on that address, so a CI runner or an office NAT can be
+		# refused through no fault of its own (decisions 3.47). The releases feed
+		# is anonymous too, on github.com, which the download below needs anyway.
+		# Only an entry's own alternate link is matched: release notes inside the
+		# feed are entity-escaped and cannot fake that line. v[0-9] drops
+		# vscode-v* on the tag itself, exactly as above.
+		info "the GitHub API gave no answer, so reading the releases feed instead..."
+		version="$(fetch "https://github.com/$REPO/releases.atom" |
+			sed -E -n "s#.*<link rel=\"alternate\" type=\"text/html\" href=\"https://github\.com/$REPO/releases/tag/(v[0-9][^\"]*)\"/>.*#\1#p" |
+			head -n1)"
+	fi
+	if [ -z "$version" ]; then
+		err "could not find a released agentop version through the GitHub API or the releases feed. Set AGENTOP_VERSION=vX.Y.Z explicitly and run this again."
 	fi
 fi
 # goreleaser's name_template uses {{ .Version }} with no leading 'v', while the
